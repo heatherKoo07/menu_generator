@@ -2,27 +2,19 @@ import datetime
 import mmh3
 import pprint
 
-
-def get_number_of_days(date_obj):
-    return (date_obj.replace(month=date_obj.month % 12 + 1, day=1) - datetime.timedelta(days=1)).day
+AS_OF = datetime.datetime(2000, 1, 1)
 
 
-def get_window_index(day, window, num_of_days, menu_list):
-    window_index = (day - 1) // window
-    day_index = (day - 1) % window
-
-    if window * (window_index + 1) > num_of_days:
-        window_index -= 1
-    if window * (window_index + 2) > num_of_days:
-        window = num_of_days - window * window_index
-    if len(menu_list) < window * 2:
-        raise ValueError(f"You should have at least {window * 2} menus")
-    return window_index, window, day_index
+def get_window_index(date_obj, window):
+    daydelta = (date_obj - AS_OF).days
+    window_index = daydelta // window
+    index_within_window = daydelta % window
+    return window_index, index_within_window
 
 
-def shuffle(epoch, menu_list, num_of_days):
-    num_of_menus = num_of_days * 2  # lunch + dinner
-    epoch = str(epoch)
+def shuffle(date_obj, menu_list, window):
+    num_of_menus = window * 2  # lunch + dinner
+    epoch = str(date_obj.timestamp())
     seed = 0
     for _ in range(num_of_menus):
         hash_value0 = mmh3.hash(epoch, seed)
@@ -72,59 +64,21 @@ def generate_menu(from_date_str, length, menu_list, dedup_days=5):
         raise ValueError(f"You should have at least {window * 2} menus")
 
     from_date_obj = datetime.datetime.strptime(from_date_str, "%Y-%m-%d")
-    this_month_year, this_month = from_date_obj.year, from_date_obj.month
+    this_window_index, begin_index = get_window_index(from_date_obj, window)
 
-    last_month_year = this_month_year
-    last_month = this_month - 1
-    if this_month == 1:
-        last_month_year -= 1
-        last_month = 12
-    last_month_obj = datetime.datetime(last_month_year, last_month, 1)
-
-    this_month_num_of_days = get_number_of_days(from_date_obj)
-    last_month_num_of_days = get_number_of_days(last_month_obj)
-
-    this_window_index, this_window, begin_index = get_window_index(
-        from_date_obj.day, window, this_month_num_of_days, menu_list)
-    this_epoch = datetime.datetime(this_month_year, this_month,
-                                   this_window_index * window + 1).timestamp()
-    last_epoch = None
-    last_window = window
-    if this_window_index > 0:
-        last_epoch = datetime.datetime(this_month_year, this_month,
-                                       (this_window_index - 1) * window + 1).timestamp()
-    else:
-        last_window_index, last_window, _ = get_window_index(
-            last_month_num_of_days, window, last_month_num_of_days, menu_list)
-        last_epoch = datetime.datetime(last_month_year, last_month,
-                                       last_window_index * window + 1).timestamp()
+    this_window_obj = AS_OF + datetime.timedelta(days=this_window_index * window)
+    last_window_obj = this_window_obj - datetime.timedelta(days=window)
 
     final_menu = []
-    last_window_menu = shuffle(last_epoch, menu_list.copy(), last_window)
+    last_window_menu = shuffle(last_window_obj, menu_list.copy(), window)
 
     while len(final_menu) < (begin_index + length) * 2:
-        this_window_menu = shuffle(this_epoch, menu_list.copy(), this_window)
+        this_window_menu = shuffle(this_window_obj, menu_list.copy(), window)
         dedup(this_window_menu, last_window_menu[-dedup_days * 2:], dedup_days)
         final_menu += this_window_menu
 
         last_window_menu = this_window_menu
-        next_possible_window_day = (this_window_index + 1) * window + 1
-
-        if this_window > window or next_possible_window_day > this_month_num_of_days:
-            next_month_year, next_month = this_month_year, this_month + 1
-            if this_month == 12:
-                next_month_year += 1
-                next_month = 1
-            next_month_obj = datetime.datetime(next_month_year, next_month, 1)
-            this_epoch = next_month_obj.timestamp()
-            this_window_index, this_window = 0, window
-            this_month_num_of_days = get_number_of_days(next_month_obj)
-            this_month_year, this_month = next_month_year, next_month
-        else:
-            this_epoch = datetime.datetime(this_month_year, this_month,
-                                           next_possible_window_day).timestamp()
-            this_window_index, this_window, _ = get_window_index(
-                next_possible_window_day, window, this_month_num_of_days, menu_list)
+        this_window_obj += datetime.timedelta(days=window)
 
     final_menu = zip_lunch_dinner(final_menu)[begin_index:begin_index + length]
     dates = get_date_list(from_date_obj, length)

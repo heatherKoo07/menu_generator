@@ -19,10 +19,14 @@ class Menu(Resource):
     def post(self):
         # sort
         parser = reqparse.RequestParser()
-        parser.add_argument('menu', required=True, help="Menu name to add")
+        parser.add_argument(
+            'menu', required=True,
+            help="Menu name to add. It accepts a comma separated string as well for bulk addition")
         args = parser.parse_args()
-        if collection.find_one({"menu": args.menu}) is None:
-            collection.insert_one({"menu": args.menu})
+        for menu in args.menu.split(','):
+            menu = menu.strip()
+            if collection.find_one({"menu": menu}) is None:
+                collection.insert_one({"menu": menu})
         return {'message': 'Menu successfully added'}
 
     def delete(self):
@@ -44,15 +48,12 @@ class RandomMenu(Resource):
         start_date = request.args.get("start_date")
         length = request.args.get("length")
         dedup_days = request.args.get("dedup_days")
-        print(request.args)
-        print(start_date, length, dedup_days)
-        
+
         menu_list = [doc['menu'] for doc in collection.find()]
         try:
             return generate_menu(start_date, int(length), sorted(menu_list), int(dedup_days))
         except ValueError as e:
             return {'message': str(e)}, 400
-
 
 
 api.add_resource(Menu, '/menu')
